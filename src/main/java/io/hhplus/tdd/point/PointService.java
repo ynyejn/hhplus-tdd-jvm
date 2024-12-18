@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static io.hhplus.tdd.point.TransactionType.*;
 
@@ -15,6 +16,8 @@ public class PointService {
 
     private final UserPointTable userPointTable;
     private final PointHistoryTable pointHistoryTable;
+    private final UserLockManager lockManager;
+
     private static final long MAX_POINT = 100000;
 
     public UserPoint selectById(long id) {
@@ -25,15 +28,23 @@ public class PointService {
         return pointHistoryTable.selectAllByUserId(id);
     }
 
-    public UserPoint adjustUserPoint(TransactionType transactionType, long id, long adjustAmount) {
-        UserPoint userPoint = selectById(id);
-        validate(transactionType, userPoint.point(), adjustAmount);
+    public UserPoint adjustUserPoint(TransactionType transactionType, long userId, long adjustAmount) {
+        ReentrantLock lock = lockManager.getLock(userId);
+        lock.lock();
+        try {
+            UserPoint userPoint = selectById(userId);
+            validate(transactionType, userPoint.point(), adjustAmount);
 
-        long updatedPoint = userPoint.point() + (transactionType.equals(CHARGE) ? adjustAmount : -adjustAmount);
-        userPoint = userPointTable.insertOrUpdate(userPoint.id(), updatedPoint);
+            long updatedPoint = userPoint.point() + (transactionType.equals(CHARGE) ? adjustAmount : -adjustAmount);
+            userPoint = userPointTable.insertOrUpdate(userPoint.id(), updatedPoint);
 
-        recordPointHistory(id, adjustAmount, transactionType);
-        return userPoint;
+            recordPointHistory(userId, adjustAmount, transactionType);
+            return userPoint;
+        } catch (Exception e) {
+            throw e;
+        } finally {
+            lock.unlock();
+        }
     }
 
     public void validate(TransactionType transactionType, long currentPoint, long adjustAmount) {

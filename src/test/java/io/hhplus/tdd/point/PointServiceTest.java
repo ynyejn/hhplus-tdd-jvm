@@ -10,6 +10,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.concurrent.locks.ReentrantLock;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static io.hhplus.tdd.point.TransactionType.*;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -26,9 +28,11 @@ class PointServiceTest {
     @Mock
     private PointHistoryTable pointHistoryTable;
 
+    @Mock
+    private UserLockManager lockManager;
+
     @InjectMocks
     private PointService pointService;
-
 
     @Nested
     @DisplayName("포인트 충전 검증 테스트")
@@ -199,6 +203,7 @@ class PointServiceTest {
             UserPoint initialPoint = new UserPoint(userId, currentPoint, System.currentTimeMillis());
             UserPoint updatedPoint = new UserPoint(userId, currentPoint + chargeAmount, System.currentTimeMillis());
 
+            when(lockManager.getLock(userId)).thenReturn(new ReentrantLock());
             when(userPointTable.selectById(userId)).thenReturn(initialPoint);
             when(userPointTable.insertOrUpdate(userId, currentPoint + chargeAmount)).thenReturn(updatedPoint);
 
@@ -219,6 +224,7 @@ class PointServiceTest {
             long chargeAmount = 20000L;
             UserPoint userPoint = new UserPoint(userId, currentPoint, System.currentTimeMillis());
 
+            when(lockManager.getLock(userId)).thenReturn(new ReentrantLock());
             when(userPointTable.selectById(userId)).thenReturn(userPoint);
 
             // when & then
@@ -242,6 +248,7 @@ class PointServiceTest {
             UserPoint initialPoint = new UserPoint(userId, currentPoint, System.currentTimeMillis());
             UserPoint updatedPoint = new UserPoint(userId, currentPoint - useAmount, System.currentTimeMillis());
 
+            when(lockManager.getLock(userId)).thenReturn(new ReentrantLock());
             when(userPointTable.selectById(userId)).thenReturn(initialPoint);
             when(userPointTable.insertOrUpdate(userId, currentPoint - useAmount)).thenReturn(updatedPoint);
 
@@ -262,6 +269,7 @@ class PointServiceTest {
             long useAmount = 1000L;
             UserPoint userPoint = new UserPoint(userId, currentPoint, System.currentTimeMillis());
 
+            when(lockManager.getLock(userId)).thenReturn(new ReentrantLock());
             when(userPointTable.selectById(userId)).thenReturn(userPoint);
 
             // when & then
@@ -281,6 +289,7 @@ class PointServiceTest {
         long negativeAmount = -500L;
         UserPoint userPoint = new UserPoint(userId, currentPoint, System.currentTimeMillis());
 
+        when(lockManager.getLock(userId)).thenReturn(new ReentrantLock());
         when(userPointTable.selectById(userId)).thenReturn(userPoint);
 
         // when & then
