@@ -1,6 +1,5 @@
 package io.hhplus.tdd.point;
 
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,17 +18,15 @@ class PointServiceItTest {
     private PointService pointService;
 
     @Nested
-    @DisplayName("포인트 충전 통합 테스트")
     class ChargePointTest {
         @Test
-        @DisplayName("포인트 충전이 DB에 정상적으로 반영된다")
-        void chargePoint() {
+        void 포인트_충전시_DB에_정상적으로_반영되고_충전된_포인트_정보를_반환한다() {
             // given
             long userId = 1L;
             long chargeAmount = 1000L;
 
             // when
-            UserPoint userPoint = pointService.adjustUserPoint(CHARGE, userId, chargeAmount);
+            UserPoint userPoint = pointService.charge(userId, chargeAmount);
 
             // then
             assertEquals(chargeAmount, userPoint.point());
@@ -46,16 +43,15 @@ class PointServiceItTest {
         }
 
         @Test
-        @DisplayName("여러번 충전시 포인트가 누적된다")
-        void multipleCharges() {
+        void 포인트_충전을_여러번_하면_포인트가_누적되어_반영된다() {
             // given
             long userId = 2L;
             long firstCharge = 1000L;
             long secondCharge = 2000L;
 
             // when
-            pointService.adjustUserPoint(CHARGE, userId, firstCharge);
-            UserPoint userPoint = pointService.adjustUserPoint(CHARGE, userId, secondCharge);
+            pointService.charge(userId, firstCharge);
+            UserPoint userPoint = pointService.charge(userId, secondCharge);
 
             // then
             assertEquals(firstCharge + secondCharge, userPoint.point());
@@ -66,19 +62,17 @@ class PointServiceItTest {
     }
 
     @Nested
-    @DisplayName("포인트 사용 통합 테스트")
     class UsePointTest {
         @Test
-        @DisplayName("포인트 사용이 DB에 정상적으로 반영된다")
-        void usePoint() {
+        void 포인트_사용시_DB에_정상적으로_반영되고_차감된_포인트_정보를_반환한다() {
             // given
             long userId = 3L;
             long initialCharge = 5000L;
             long useAmount = 3000L;
 
             // when
-            pointService.adjustUserPoint(CHARGE, userId, initialCharge);
-            UserPoint userPoint = pointService.adjustUserPoint(USE, userId, useAmount);
+            pointService.charge(userId, initialCharge);
+            UserPoint userPoint = pointService.use(userId, useAmount);
 
             // then
             assertEquals(initialCharge - useAmount, userPoint.point());
@@ -90,17 +84,35 @@ class PointServiceItTest {
             // 이력이 저장되었는지 확인
             List<PointHistory> histories = pointService.selectHistoriesByUserId(userId);
             assertEquals(2, histories.size());
+            assertEquals(useAmount, histories.get(1).amount());
+            assertEquals(USE, histories.get(1).type());
+        }
+
+        @Test
+        void 포인트_사용시_에러가_발생하면_포인트가_변경되지_않는다() {
+            // given
+            long userId = 4L;
+            long initialCharge = 5000L;
+            long useAmount = 6000L;  // 잔액보다 큰 금액 => validate에서 에러 발생
+
+            // when
+            pointService.charge(userId, initialCharge);
+
+            // then
+            assertThrows(IllegalArgumentException.class,
+                    () -> pointService.use(userId, useAmount));
+
+            UserPoint userPoint = pointService.selectById(userId);
+            assertEquals(initialCharge, userPoint.point());  // 원래 금액이 유지되어야 함
         }
     }
 
     @Nested
-    @DisplayName("동시성 통합 테스트")
     class ConcurrencyTest {
         @Test
-        @DisplayName("한 사용자의 여러 요청이 동시에 들어와도 포인트가 정확하게 처리된다")
-        void concurrentRequestsForOneUser() throws InterruptedException {
+        void 동일_사용자의_여러_포인트_요청이_동시에_들어와도_포인트가_정확하게_처리된다() throws InterruptedException {
             // given
-            long userId = 4L;
+            long userId = 5L;
             int threadCount = 10;
             long chargeAmount = 1000L;
 
@@ -111,7 +123,7 @@ class PointServiceItTest {
             for (int i = 0; i < threadCount; i++) {
                 executorService.submit(() -> {
                     try {
-                        pointService.adjustUserPoint(CHARGE, userId, chargeAmount);
+                        pointService.charge(userId, chargeAmount);
                     } finally {
                         latch.countDown();
                     }
@@ -127,13 +139,52 @@ class PointServiceItTest {
             List<PointHistory> histories = pointService.selectHistoriesByUserId(userId);
             assertEquals(threadCount, histories.size());
         }
+        @Test
+        void 동일_사용자의_여러_포인트_충전과_사용_요청이_동시에_들어와도_포인트가_정확하게_처리된다() throws InterruptedException {
+            // given
+            long userId = 6L;
+            long amount = 1000L;
+
+            // 초기 잔액 5000원
+            pointService.charge(userId, amount * 5);
+
+            // 5번의 충전(+1000)과 5번의 사용(-1000) 요청 준비
+            int numberOfRequests = 10;
+            ExecutorService executorService = Executors.newFixedThreadPool(numberOfRequests);
+            CountDownLatch latch = new CountDownLatch(numberOfRequests);
+
+            // when
+            for (int i = 0; i < numberOfRequests; i++) {
+                boolean isCharge = i % 2 == 0;
+                executorService.submit(() -> {
+                    try {
+                        if (isCharge) {
+                            pointService.charge(userId, amount);
+                        } else {
+                            pointService.use(userId, amount);
+                        }
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            }
+
+            // 모든 요청 완료 대기
+            latch.await(10, TimeUnit.SECONDS);
+
+            // then
+            UserPoint finalPoint = pointService.selectById(userId);
+            assertEquals(amount * 5, finalPoint.point());  // 최종 잔액은 초기 잔액과 동일
+
+            List<PointHistory> histories = pointService.selectHistoriesByUserId(userId);
+            assertEquals(11, histories.size());  // 초기 충전 1회 + (충전 5회 + 사용 5회)
+        }
 
         @Test
-        @DisplayName("서로 다른 사용자의 요청은 동시에 처리된다")
-        void concurrentRequestsForDifferentUsers() throws InterruptedException {
+        void 서로_다른_사용자의_포인트_요청은_동시에_처리된다() throws InterruptedException {
             // given
-            long userId1 = 5L;
-            long userId2 = 6L;
+            long userId1 = 7L;
+            long userId2 = 8L;
             int threadCount = 5;
             long chargeAmount = 1000L;
 
@@ -150,7 +201,7 @@ class PointServiceItTest {
                 futures.add(executorService.submit(() -> {
                     try {
                         startLatch.await(); // 시작 신호 대기
-                        pointService.adjustUserPoint(CHARGE, userId1, chargeAmount);
+                        pointService.charge(userId1, chargeAmount);
                         return null;
                     } finally {
                         endLatch.countDown();
@@ -161,7 +212,7 @@ class PointServiceItTest {
                 futures.add(executorService.submit(() -> {
                     try {
                         startLatch.await(); // 시작 신호 대기
-                        pointService.adjustUserPoint(CHARGE, userId2, chargeAmount);
+                        pointService.charge(userId2, chargeAmount);
                         return null;
                     } finally {
                         endLatch.countDown();
@@ -200,21 +251,20 @@ class PointServiceItTest {
         }
 
         @Test
-        @DisplayName("동일 사용자의 포인트 요청이 순서대로 처리된다")
-        void verifyPointRequestOrder() throws InterruptedException {
+        void 동일_사용자의_포인트_요청은_도달_순서대로_처리된다() throws InterruptedException {
             // given
-            long userId = 7L;
+            long userId = 9L;
             List<Long> processOrder = Collections.synchronizedList(new ArrayList<>());
 
             // 첫 번째 요청이 처리중
             long amount1 = 1000L;
-            pointService.adjustUserPoint(CHARGE, userId, amount1);
+            pointService.charge(userId, amount1);
 
             // 두 번째, 세 번째 요청 준비
             Thread thread2 = new Thread(() -> {
                 try {
                     long amount2 = 2000L;
-                    pointService.adjustUserPoint(CHARGE, userId, amount2);
+                    pointService.charge(userId, amount2);
                     processOrder.add(amount2);
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -224,7 +274,7 @@ class PointServiceItTest {
             Thread thread3 = new Thread(() -> {
                 try {
                     long amount3 = 3000L;
-                    pointService.adjustUserPoint(CHARGE, userId, amount3);
+                    pointService.use(userId, amount3);
                     processOrder.add(amount3);
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -245,7 +295,7 @@ class PointServiceItTest {
 
             // 최종 포인트 확인
             UserPoint finalPoint = pointService.selectById(userId);
-            assertEquals(6000L, finalPoint.point());  // 1000 + 2000 + 3000
+            assertEquals(0, finalPoint.point());  // 1000 + 2000 + 3000
 
             // 이력 확인
             List<PointHistory> histories = pointService.selectHistoriesByUserId(userId);
@@ -256,22 +306,4 @@ class PointServiceItTest {
         }
     }
 
-    @Test
-    @DisplayName("에러 발생 시 포인트가 변경되지 않는다.")
-    void transactionRollback() {
-        // given
-        long userId = 8L;
-        long initialCharge = 5000L;
-        long useAmount = 6000L;  // 잔액보다 큰 금액 => validate에서 에러 발생
-
-        // when
-        pointService.adjustUserPoint(CHARGE, userId, initialCharge);
-
-        // then
-        assertThrows(IllegalArgumentException.class,
-                () -> pointService.adjustUserPoint(USE, userId, useAmount));
-
-        UserPoint userPoint = pointService.selectById(userId);
-        assertEquals(initialCharge, userPoint.point());  // 원래 금액이 유지되어야 함
-    }
 }

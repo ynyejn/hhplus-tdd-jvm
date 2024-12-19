@@ -18,8 +18,6 @@ public class PointService {
     private final PointHistoryTable pointHistoryTable;
     private final UserLockManager lockManager;
 
-    private static final long MAX_POINT = 100000;
-
     public UserPoint selectById(long id) {
         return userPointTable.selectById(id);
     }
@@ -28,43 +26,49 @@ public class PointService {
         return pointHistoryTable.selectAllByUserId(id);
     }
 
-    public UserPoint adjustUserPoint(TransactionType transactionType, long userId, long adjustAmount) {
+    public UserPoint charge(long userId, long chargeAmount) {
         ReentrantLock lock = lockManager.getLock(userId);
         lock.lock();
         try {
             UserPoint userPoint = selectById(userId);
-            validate(transactionType, userPoint.point(), adjustAmount);
 
-            long updatedPoint = userPoint.point() + (transactionType.equals(CHARGE) ? adjustAmount : -adjustAmount);
+            userPoint.validate(CHARGE, chargeAmount);
+
+            // 포인트 업데이트
+            long updatedPoint = userPoint.point() + chargeAmount;
             userPoint = userPointTable.insertOrUpdate(userPoint.id(), updatedPoint);
 
-            recordPointHistory(userId, adjustAmount, transactionType);
+            // 포인트 이력 기록
+            recordPointHistory(userId, chargeAmount, TransactionType.CHARGE);
+
             return userPoint;
-        } catch (Exception e) {
-            throw e;
         } finally {
             lock.unlock();
         }
     }
 
-    public void validate(TransactionType transactionType, long currentPoint, long adjustAmount) {
-        if (adjustAmount <= 0) {
-            throw new IllegalArgumentException("충전/사용 포인트는 0보다 커야합니다.");
-        }
+    public UserPoint use(long userId, long useAmount) {
+        ReentrantLock lock = lockManager.getLock(userId);
+        lock.lock();
+        try {
+            UserPoint userPoint = selectById(userId);
 
-        switch (transactionType) {
-            case CHARGE -> {
-                if (currentPoint + adjustAmount > MAX_POINT) {
-                    throw new IllegalArgumentException("포인트가 최대치를 초과했습니다.");
-                }
-            }
-            case USE -> {
-                if (currentPoint - adjustAmount < 0) {
-                    throw new IllegalArgumentException("포인트가 부족합니다.");
-                }
-            }
+            // 유효성 검증
+            userPoint.validate(USE, useAmount);
+
+            // 포인트 업데이트
+            long updatedPoint = userPoint.point() - useAmount;
+            userPoint = userPointTable.insertOrUpdate(userPoint.id(), updatedPoint);
+
+            // 포인트 이력 기록
+            recordPointHistory(userId, useAmount, TransactionType.USE);
+
+            return userPoint;
+        } finally {
+            lock.unlock();
         }
     }
+
 
     public void recordPointHistory(long userId, long amount, TransactionType type) {
         pointHistoryTable.insert(userId, amount, type, System.currentTimeMillis());

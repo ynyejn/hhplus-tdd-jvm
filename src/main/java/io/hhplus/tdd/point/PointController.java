@@ -43,7 +43,7 @@ public class PointController {
             @PathVariable long id,
             @RequestBody long amount
     ) {
-        return pointService.adjustUserPoint(TransactionType.CHARGE, id, amount);
+        return pointService.charge(id, amount);
     }
 
     /**
@@ -54,6 +54,6 @@ public class PointController {
             @PathVariable long id,
             @RequestBody long amount
     ) {
-        return pointService.adjustUserPoint(TransactionType.USE, id, amount);
+        return pointService.use(id, amount);
     }
 }

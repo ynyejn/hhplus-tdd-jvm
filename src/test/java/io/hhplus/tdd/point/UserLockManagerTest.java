@@ -1,6 +1,5 @@
 package io.hhplus.tdd.point;
 
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -17,8 +16,7 @@ class UserLockManagerTest {
     private final UserLockManager lockManager = new UserLockManager();
 
     @Test
-    @DisplayName("동일한 사용자 ID로 항상 같은 락 객체를 반환한다")
-    void returnSameLockForSameUser() {
+    void 동일한_사용자ID로_락_객체를_요청하면_같은_객체를_반환한다() {
         // given
         Long userId = 1L;
 
@@ -31,8 +29,7 @@ class UserLockManagerTest {
     }
 
     @Test
-    @DisplayName("서로 다른 사용자 ID는 서로 다른 락 객체를 반환한다")
-    void returnDifferentLockForDifferentUsers() {
+    void 서로_다른_사용자ID로_락_객체를_요청하면_다른_객체를_반환한다() {
         // given
         Long userId1 = 2L;
         Long userId2 = 3L;
@@ -46,8 +43,7 @@ class UserLockManagerTest {
     }
 
     @Test
-    @DisplayName("동시에 여러 스레드에서 같은 사용자의 락을 요청해도 같은 락 객체를 반환한다")
-    void returnSameLockForConcurrentRequests() throws InterruptedException {
+    void 동일한_사용자ID로_여러_스레드에서_동시에_락_객체를_요청하면_같은_객체를_반환한다() throws InterruptedException {
         // given
         Long userId = 4L;
         int threadCount = 10;
@@ -84,8 +80,7 @@ class UserLockManagerTest {
     }
 
     @Test
-    @DisplayName("락 획득과 해제가 정상적으로 동작한다")
-    void lockAndUnlockWork() {
+    void 락_객체의_잠금과_해제가_정상적으로_동작한다() {
         // given
         Long userId = 5L;
         ReentrantLock lock = lockManager.getLock(userId);
@@ -98,8 +93,7 @@ class UserLockManagerTest {
     }
 
     @Test
-    @DisplayName("요청 순서대로(도달 순서) 락을 획득한다")
-    void verifyFairLockOrder() throws InterruptedException {
+    void 락_요청시_먼저_요청한_스레드가_락을_먼저_획득한다() throws InterruptedException {
         // given
         Long userId = 6L;
         ReentrantLock lock = lockManager.getLock(userId);
@@ -144,5 +138,4 @@ class UserLockManagerTest {
         assertEquals(List.of("Thread2", "Thread3"), lockOrder,
                 "락 획득 순서가 요청 순서와 다릅니다.");
     }
-
 }
