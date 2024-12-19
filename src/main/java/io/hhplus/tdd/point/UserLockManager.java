@@ -11,6 +11,6 @@ public class UserLockManager {
 
     public ReentrantLock getLock(Long userId) {
         // computeIfAbsent는 원자적 연산으로, 키가 없을 경우에만 새 lock을 생성
-        return userLocks.computeIfAbsent(userId, k -> new ReentrantLock());
+        return userLocks.computeIfAbsent(userId, k -> new ReentrantLock(true));
     }
 }

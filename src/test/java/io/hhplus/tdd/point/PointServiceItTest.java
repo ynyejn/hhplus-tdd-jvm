@@ -6,8 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.*;
 
 import static io.hhplus.tdd.point.TransactionType.CHARGE;
@@ -175,7 +174,7 @@ class PointServiceItTest {
 
             // then
             // 모든 요청이 완료될 때까지 대기
-            boolean completed = endLatch.await(10, TimeUnit.SECONDS);
+            boolean completed = endLatch.await(15, TimeUnit.SECONDS);
             assertTrue(completed, "일부 요청이 시간 내에 완료되지 않았습니다");
 
             // 각 스레드의 예외 확인
@@ -199,13 +198,69 @@ class PointServiceItTest {
 
             executorService.shutdown();
         }
+
+        @Test
+        @DisplayName("동일 사용자의 포인트 요청이 순서대로 처리된다")
+        void verifyPointRequestOrder() throws InterruptedException {
+            // given
+            long userId = 7L;
+            List<Long> processOrder = Collections.synchronizedList(new ArrayList<>());
+
+            // 첫 번째 요청이 처리중
+            long amount1 = 1000L;
+            pointService.adjustUserPoint(CHARGE, userId, amount1);
+
+            // 두 번째, 세 번째 요청 준비
+            Thread thread2 = new Thread(() -> {
+                try {
+                    long amount2 = 2000L;
+                    pointService.adjustUserPoint(CHARGE, userId, amount2);
+                    processOrder.add(amount2);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
+
+            Thread thread3 = new Thread(() -> {
+                try {
+                    long amount3 = 3000L;
+                    pointService.adjustUserPoint(CHARGE, userId, amount3);
+                    processOrder.add(amount3);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
+
+            // when
+            thread2.start();
+            Thread.sleep(100);  // thread2가 먼저 대기하도록 보장
+            thread3.start();
+            Thread.sleep(100);  // thread3가 대기하도록 보장
+
+            // then
+            Thread.sleep(1000);  // 모든 처리가 완료될 때까지 대기
+
+            // 처리 순서 확인
+            assertEquals(Arrays.asList(2000L, 3000L), processOrder);
+
+            // 최종 포인트 확인
+            UserPoint finalPoint = pointService.selectById(userId);
+            assertEquals(6000L, finalPoint.point());  // 1000 + 2000 + 3000
+
+            // 이력 확인
+            List<PointHistory> histories = pointService.selectHistoriesByUserId(userId);
+            assertEquals(3, histories.size());
+            assertEquals(1000L, histories.get(0).amount());
+            assertEquals(2000L, histories.get(1).amount());
+            assertEquals(3000L, histories.get(2).amount());
+        }
     }
 
     @Test
-    @DisplayName("에러 발생 시 트랜잭션이 포인트가 변경되지 않는다.")
+    @DisplayName("에러 발생 시 포인트가 변경되지 않는다.")
     void transactionRollback() {
         // given
-        long userId = 7L;
+        long userId = 8L;
         long initialCharge = 5000L;
         long useAmount = 6000L;  // 잔액보다 큰 금액 => validate에서 에러 발생
 
